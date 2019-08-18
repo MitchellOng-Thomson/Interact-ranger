@@ -20,31 +20,34 @@ interact <- function(forest, depth){
   for(i in seq_len(forest$num.trees)){
     
     # Extract a dataframe that captures tree i and slice it at the pre-determined depth
-    rf.tree <- treeInfo(forest, i) %>% 
-      slice(1:depth)
+    rf.tree <- treeInfo(forest, i) 
     
     # Create tibble to join with the rf.tree to get the variables split on the left and right
-    extra_var <- tibble(lc = rep(as.character(1), nrow(rf.tree)), rc = rep(as.character(1), nrow(rf.tree)))
+    extra_var <- tibble(lc = rep(as.character(1), depth), rc = rep(as.character(1), depth))
     
     # Loop through each split level and get variable names of the left and right splits - fill out extra_var 
     for(x in seq_len(depth)){    
       lc <- rf.tree[x, ] %>% pull(leftChild)
       rc <- rf.tree[x, ] %>% pull(rightChild)
       
-      lc_var <- rf.tree %>% filter(nodeID == lc) %>% pull(splitvarName) %>% as.character()
-      rc_var <- rf.tree %>% filter(nodeID == rc) %>% pull(splitvarName) %>% as.character()
+      # lc_var <- rf.tree %>% filter(nodeID == lc) %>% pull(splitvarName) %>% as.character()
+      # rc_var <- rf.tree %>% filter(nodeID == rc) %>% pull(splitvarName) %>% as.character()
       
-      extra_var[x, 1] <- ifelse(identical(lc_var, character(0)), "Terminal node", lc_var)
-      extra_var[x, 2] <- ifelse(identical(rc_var, character(0)), "Terminal node", rc_var)
+      lc_var <- rf.tree[lc + 1, ] %>% pull(splitvarName) %>% as.character()
+      rc_var <- rf.tree[rc + 1, ] %>% pull(splitvarName) %>% as.character()
+      
+      extra_var[x, 1] <- ifelse(is.na(lc_var), "Terminal node", lc_var)
+      extra_var[x, 2] <- ifelse(is.na(rc_var), "Terminal node", rc_var)
     }
     
     # Adding the variable names to the original tree data frame
     rf.tree <- rf.tree %>% 
+      slice(1:depth) %>% 
       bind_cols(extra_var)
     
     # Collapsing the columns to count the number of variable pairs, sorting is done to avoid having both variable pair combinations
     all_splits <- rf.tree %>% 
-      slice(1:depth) %>%
+      # slice(1:depth) %>%
       arrange(splitvarName, lc, rc) %>%
       unite("lc_split", splitvarName, lc, sep = "-", remove = FALSE) %>% 
       unite("rc_split", splitvarName, rc, sep = "-", remove = FALSE)
@@ -58,12 +61,11 @@ interact <- function(forest, depth){
       count(splits) 
     
     Total_splits <- Total_splits %>% 
-      right_join(all_splits) %>% 
-      mutate(count = case_when(
-        is.na(count) ~ n,   
-        TRUE ~ count + n
-      )) %>% 
-      select(splits, count)
+      full_join(all_splits, by = "splits") %>% 
+      mutate_if(is.integer, ~replace(., is.na(.), 0)) %>% 
+      mutate(count = count + n) %>% 
+      select(splits, count) %>% 
+      arrange(desc(count))
     
     
     # Count the variable pairs that occur in either of the first two splits
@@ -80,13 +82,13 @@ interact <- function(forest, depth){
       bind_rows(first_two_lc) %>% 
       count(splits)
     
-    Total_first_two_splits <- Total_first_two_splits %>% 
-      right_join(first_two_splits) %>% 
-      mutate(count = case_when(
-        is.na(count) ~ n,   
-        TRUE ~ count + n
-      )) %>% 
-      select(splits, count)
+    Total_first_two_splits %>% 
+      full_join(first_two_splits, by = "splits") %>% 
+      mutate_if(is.integer, ~replace(., is.na(.), 0)) %>% 
+      mutate(count = count + n) %>% 
+      select(splits, count) %>% 
+      arrange(desc(count))
+    
     
     
   }
